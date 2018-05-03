@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ShooterBingo Mobile</title>
+    <link rel="stylesheet" href="master.css">
+  </head>
+  <body>
+    <ul id="messages">
+    </ul>
+    <div id="buttons">
+      <button id="buyin">Buy In</button>
+      <button id="cashout" disabled>Cash Out</button>
+      <button id="bonus" disabled>Bonus Bet</button>
+    </div>
+    <script type="text/javascript" src="/socket.io/socket.io.js"></script>
+    <script type="text/javascript">
+      const TABLE_ID = 'ABCDEF123456FDCBA';
+    </script>
+    <script type="text/javascript">
+      var socket = io('/players');
+      socket.on('buy:in:confirmed', msg => {
+        const list = document.querySelector('#messages');
+        let newMsg = document.createElement('li');
+        newMsg.textContent = msg;
+        list.appendChild(newMsg);
+      });
+      socket.on('confirm:amt', (amt, dealer) => {
+        if (confirm('$ ' + amt)) {
+          socket.emit('amt:confirmed', amt);
+        }
+        else {
+          socket.emit('amt:dispute', dealer, amt);
+        }
+      })
+    </script>
+    <script type="text/javascript">
+      const buyInBtn = document.querySelector('#buyin');
+      buyInBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        socket.emit('join:table', TABLE_ID);
+      });
+    </script>
+  </body>
+</html>

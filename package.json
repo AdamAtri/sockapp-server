@@ -1,0 +1,23 @@
+{
+  "name": "shooter-server",
+  "version": "1.0.0",
+  "description": "server side application for mobile shooter bingo",
+  "main": "server.js",
+  "author": "adam@atricoware",
+  "license": "private",
+  "private": true,
+  "scripts": {
+    "predemon": "DEBUG=*",
+    "demon" : "NODE_ENV=development nodemon server.js"
+  },
+  "dependencies": {
+    "body-parser": "^1.18.2",
+    "cookie-parser": "^1.4.3",
+    "express": "^4.16.3",
+    "mongodb": "^3.0.7",
+    "passport": "^0.4.0"
+  },
+  "devDependencies": {
+    "nodemon": "^1.17.3"
+  }
+}
