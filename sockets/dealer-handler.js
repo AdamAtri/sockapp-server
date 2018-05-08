@@ -62,4 +62,17 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       })
       .catch(err => {socket.emit('fail', err.message);});
   });
+
+  socket.on('cancel:request', model => {
+    console.log('cancel request', model);
+    dbClient.getAndRemoveItem(P_PENDING, model).then( pendingPlayer => {
+      pendingPlayer = pendingPlayer.value;
+      console.log('pending player', pendingPlayer);
+      socket.emit('notify', `Pending ${pendingPlayer.reason} request canceled` );
+      playersIO.to(pendingPlayer.socketId).emit('notify',
+        `Your ${pendingPlayer.reason} request on table ${pendingPlayer.tableId} has been canceled`);
+    })
+    .catch(console.error);
+
+  });
 };
