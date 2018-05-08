@@ -3,7 +3,7 @@
 module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket) {
 
   const dbClient = require('../mongo/dbclient.js');
-  const {P_ACTIVE, P_PENDING, T_ACTIVE} = require('./config');
+  const {P_ACTIVE, P_PENDING, T_ACTIVE, PENDING_REASONS} = require('./config');
 
 
   // const cookies = (socket.handshake.headers.cookie.split(';') || [])
@@ -29,15 +29,23 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
   // socket.handshake.headers.cookie = newCookie;
 
   socket.on('join:table', ({tableId, userId}) => {
+    // xxx console.log('join:table');
+    let reason = PENDING_REASONS.BUYIN;
+    let socketId = socket.id;
+    let pendingPlayer;
+    let dealerSocket;
+
     Promise.resolve()
       // stop a player from trying to buy into more than one table
       .then( () => {
+        // xxx console.log('verify not on any other tables');
         if (Object.keys(socket.rooms).length > 1)
           throw new Error('Please cashout from your current table.');
         return dbClient.getCollection(T_ACTIVE, {tableName: tableId});
       })
       // stop a player from trying to buy into an inactive table
       .then( result => {
+        // xxx console.log('verify table is active');
         if (result.length < 1)
           throw new Error('Cannot join a table without a dealer');
         // pass on the requested active table
@@ -46,9 +54,15 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
       // alert the dealer of the requested table that there is a pending player buyin,
       //  and add the user to the pending-players table.
       .then( tableData => {
-        let pendingPlayer = {userId, socketId:socket.id, tableId};
-        dbClient.insertItem(P_PENDING, pendingPlayer);
-        dealersIO.to(tableData.dealerSocket).emit('player:buyin', pendingPlayer);
+        // xxx console.log('active table', tableData);
+        dealerSocket = tableData.dealerSocket;
+        pendingPlayer = { userId, socketId, tableId, reason };
+        return dbClient.insertItem(P_PENDING, pendingPlayer);
+      })
+      .then( inserted => {
+        // xxx console.log('alert user inserted', dealerSocket, pendingPlayer);
+        // let the dealer know there's a pending buy-in
+        dealersIO.to(dealerSocket).emit('player:buyin', pendingPlayer);
         // let the user know that the request is pending.
         socket.emit('waiting', 'Please pay the dealer.');
       })
