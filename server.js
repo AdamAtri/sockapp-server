@@ -2,6 +2,7 @@ const express = require('express');
 const app = express();
 const http = require('http').Server(app);
 const io = require('socket.io')(http);
+const uuid = require('uuid/v1');
 
 const ENV = process.env.NODE_ENV;
 const { SECRET } = require('./server-config');
@@ -14,9 +15,23 @@ const
 
 app.use(bodyParser.urlencoded({extended:true}));
 app.use(bodyParser.json());
-app.use(cookieParser(SECRET));
+app.cookieParser = cookieParser;
+app.secret = SECRET;
+app.use(app.cookieParser(app.secret));
+
+app.use('*', (req, res, next) => {
+  if (! req.signedCookies.user ) {
+    let tempId = 'temp-' + uuid();
+    res.cookie('user', tempId, {
+      httpOnly: true,
+    });
+  }
+  next();
+});
+
 
 app.use('/', express.static(join(__dirname, 'public')));
+app.use('/api', require('./api/index.js'));
 
 const
   playersIO = io.of('/players'), // make Player channel
