@@ -34,13 +34,16 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
         socket.join(`/${tableId}`);
         socket.emit('login:confirm', tableId);
       })
-      .catch(err => {socket.emit('fail', 'Error attempting to join dealer to table.');});
+      .catch(err => {
+        console.error(err);
+        socket.emit('fail', 'Error attempting to join dealer to table.');
+      });
   });
 
-  socket.on('update:player:amt', ({ tableId, playerId, amt }) => {
+  socket.on('update:player:amt', ({amt, userId, tableId, reason}) => {
     // find and remove the user that we are attempting to update
     // from within the pending-players collection
-    dbClient.getAndRemoveItem(P_PENDING, {userId: playerId})
+    dbClient.getAndRemoveItem(P_PENDING, {userId, tableId, reason})
       // add the user to the active-players table
       .then(pendingPlayer => {
         if (! pendingPlayer ) throw new Error('Unable to find pending player');
@@ -53,14 +56,18 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       .then(inserted => {
         const doc = inserted.ops[0];
         dbClient.getDocById(P_ACTIVE, doc._id, {_id:false}).then(activePlayer => {
-          console.log('activePlayer', activePlayer);
           playersIO.to(activePlayer.socketId).emit('ready:player:join', activePlayer);
-        });
+        })
+        .catch(console.error);
         dbClient.getCollection(P_ACTIVE, {tableId}).then(collection => {
           socket.emit('updated:players', collection);
-        });
+        })
+        .catch(console.error);
       })
-      .catch(err => {socket.emit('fail', err.message);});
+      .catch(err => {
+        console.error(err);
+        socket.emit('fail', "An error occurred while updating the player's credit amount.");;
+      });
   });
 
   socket.on('cancel:request', model => {
