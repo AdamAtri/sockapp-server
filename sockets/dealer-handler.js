@@ -3,7 +3,7 @@
 module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
 
   const dbClient = require('../mongo/dbclient');
-  const {T_ACTIVE, P_PENDING, P_ACTIVE} = require('./config');
+  const {T_ACTIVE, P_PENDING, P_ACTIVE, GAMES, GAMES_ACTIVE} = require('./config');
 
   socket.on('dealer:login', ({tableId, userId}) => {
 
@@ -42,7 +42,7 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
 
   socket.on('update:player:amt', ({amt, userId, tableId, reason, socketId}) => {
     // find and remove the user that we are attempting to update
-    // from within the pending-players collection
+    // from the pending-players collection
     dbClient.getAndRemoveItem(P_PENDING, {userId, tableId, reason})
       // add the user to the active-players table
       .then(pendingPlayer => {
@@ -70,15 +70,13 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       })
       .catch(err => {
         console.error(err);
-        socket.emit('fail', "An error occurred while updating the player's credit amount.");;
+        socket.emit('fail', "An error occurred while updating the player's credit amount.");
       });
   });
 
   socket.on('cancel:request', model => {
-    console.log('cancel request', model);
     dbClient.getAndRemoveItem(P_PENDING, model).then( pendingPlayer => {
       pendingPlayer = pendingPlayer.value;
-      console.log('pending player', pendingPlayer);
       socket.emit('notify', `Pending ${pendingPlayer.reason} request canceled` );
       playersIO.to(pendingPlayer.socketId).emit('notify',
         `Your ${pendingPlayer.reason} request on table ${pendingPlayer.tableId} has been canceled`);
@@ -87,6 +85,24 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
   });
 
   socket.on('start:game', tableId => {
-    console.log('start game for tableId' + tableId);
+    dbClient.getCollection(GAMES_ACTIVE, {tableId})
+    .then(result => {
+      if (result.length > 0) {
+        socket.emit('fail', 'There can only be one active game at a time');
+        throw new Error(`MORE_THAN_ONE_ERROR - ${tableId}: ${JSON.stringify(result)}`);
+      }
+      else {
+        return dbClient.insertItem(GAMES, {tableId, creation: Date.now()});
+      }
+    })
+    .then(inserted => {
+      return dbClient.insertItem(GAMES_ACTIVE, inserted.ops[0]);
+    })
+    .then(inserted => {
+      let gameInfo = inserted.ops[0];
+      socket.emit('new:game', gameInfo);
+      playersIO.emit('new:game');
+    })
+    .catch(console.error);
   });
 };
