@@ -7,8 +7,9 @@
   "license": "private",
   "private": true,
   "scripts": {
+    "lint": "eslint --ignore-pattern '/node_modules/' --ignore-pattern '/public/' .",
     "predemon": "DEBUG=*",
-    "demon": "NODE_ENV=development nodemon server.js"
+    "demon": "NODE_ENV=development nodemon server.js --exec \"yarn lint\" "
   },
   "dependencies": {
     "body-parser": "^1.18.2",
@@ -20,6 +21,7 @@
     "uuid": "^3.2.1"
   },
   "devDependencies": {
+    "eslint": "^4.19.1",
     "nodemon": "^1.17.3"
   }
 }
