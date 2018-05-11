@@ -7,3 +7,5 @@ module.exports.PENDING_REASONS = {
   CASHOUT: 'cash-out',
   DISPUTE: 'dispute'
 };
+module.exports.GAMES_ACTIVE = 'active-games';
+module.exports.GAMES = 'historical-games';
