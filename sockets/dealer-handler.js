@@ -40,7 +40,7 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       });
   });
 
-  socket.on('update:player:amt', ({amt, userId, tableId, reason}) => {
+  socket.on('update:player:amt', ({amt, userId, tableId, reason, socketId}) => {
     // find and remove the user that we are attempting to update
     // from within the pending-players collection
     dbClient.getAndRemoveItem(P_PENDING, {userId, tableId, reason})
@@ -56,7 +56,11 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       .then(inserted => {
         const doc = inserted.ops[0];
         dbClient.getDocById(P_ACTIVE, doc._id, {_id:false}).then(activePlayer => {
-          playersIO.to(activePlayer.socketId).emit('ready:player:join', activePlayer);
+          let playerSocket = playersIO.sockets[socketId];
+          let tableRoom = `/${tableId}`;
+          playerSocket.join(tableRoom);
+          playerSocket.emit('ready:player:join', activePlayer);
+          playerSocket.to(tableRoom).emit('new:player', {socketId});
         })
         .catch(console.error);
         dbClient.getCollection(P_ACTIVE, {tableId}).then(collection => {
@@ -80,6 +84,9 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
         `Your ${pendingPlayer.reason} request on table ${pendingPlayer.tableId} has been canceled`);
     })
     .catch(console.error);
+  });
 
+  socket.on('start:game', tableId => {
+    console.log('start game for tableId' + tableId);
   });
 };
