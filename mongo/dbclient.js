@@ -28,12 +28,12 @@ module.exports = (function() {
             .toArray()
             .then(colData => colData.length > 0 ? colData[0] : null)
             .then(resolve)
-            .catch(reject)
+            .catch(reject);
         }).catch(reject);
       });
     },
 
-    getCollection: function getCollection(collectionName, query, raw=false) {
+    getCollection: function getCollection(collectionName, query) {
       const that = this;
       return new Promise(function(resolve, reject) {
         if (! collectionName ) reject(new Error(ERRORS.NO_COL));
@@ -53,7 +53,6 @@ module.exports = (function() {
       return new Promise(function(resolve, reject) {
         if (! collectionName || ! data) reject(new Error('collection name and/or insert data missing'));
         that.getDbAccess().then(client => {
-          collectionName = collectionName;
           const db = client.db(DATABASE);
           const insertPromise = db.collection(collectionName).save(data);
           insertPromise

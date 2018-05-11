@@ -22,4 +22,4 @@ module.exports = function seed() {
       }).catch(reject);
     }).catch(reject);
   });
-}
+};
