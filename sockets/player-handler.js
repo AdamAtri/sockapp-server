@@ -3,30 +3,7 @@
 module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket) {
 
   const dbClient = require('../mongo/dbclient.js');
-  const {P_ACTIVE, P_PENDING, T_ACTIVE, PENDING_REASONS} = require('./config');
-
-
-  // const cookies = (socket.handshake.headers.cookie.split(';') || [])
-  //   .map(x => x.trim())
-  //   .reduce((a, nxt) => {
-  //     let parts = nxt.split('=');
-  //     a[parts[0]] = parts[1];
-  //     return a;
-  //   }, {});
-  //
-  // if (cookies.user && cookies.user.startsWith('temp')) {
-  //
-  //   return require('../mongo/dbclient').insertItem(P_ACTIVE, {})
-  //     .then(result => )
-  //   cookies.user = cookies.user.slice(5);
-  // }
-  //
-  // let newCookie = Object.keys(cookies).reduce((a, nxt) => {
-  //   a += `${nxt}=${cookies[nxt]}; `;
-  //   return a;
-  // }, '');
-  // console.log('newCookie', newCookie);
-  // socket.handshake.headers.cookie = newCookie;
+  const {P_PENDING, T_ACTIVE, PENDING_REASONS} = require('./config');
 
   socket.on('join:table', ({tableId, userId}) => {
     // xxx console.log('join:table');
@@ -60,6 +37,7 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
         return dbClient.insertItem(P_PENDING, pendingPlayer);
       })
       .then( inserted => {
+        console.log(inserted[0]);
         // xxx console.log('alert user inserted', dealerSocket, pendingPlayer);
         // let the dealer know there's a pending buy-in
         dealersIO.to(dealerSocket).emit('player:buyin', pendingPlayer);
@@ -73,13 +51,5 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
 
   socket.on('cash:out', () => {
     dealersIO.emit('cash:out', 'Some fucking player wants to cash out');
-  });
-
-  socket.on('amt:confirmed', amt => {
-    console.log('player confirms $: ' + amt);
-  });
-
-  socket.on('amt:dispute', (dealer, amt) => {
-    console.log('you got some splaining to do: ' + dealer);
   });
 };
