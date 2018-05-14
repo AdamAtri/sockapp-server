@@ -9,7 +9,7 @@
   "scripts": {
     "lint": "eslint --ignore-pattern '/node_modules/' --ignore-pattern '/public/' .",
     "predemon": "DEBUG=*",
-    "demon": "NODE_ENV=development nodemon server.js --exec \"yarn lint\" "
+    "demon": "NODE_ENV=development nodemon server.js --exec \"yarn lint && node\" "
   },
   "dependencies": {
     "body-parser": "^1.18.2",
