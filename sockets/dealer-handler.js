@@ -3,6 +3,7 @@
 module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
 
   const dbClient = require('../mongo/dbclient');
+  const rollValidator = require('../game/roll-validator');
   const {T_ACTIVE, P_PENDING, P_ACTIVE, GAMES, GAMES_ACTIVE} = require('./config');
 
   socket.on('dealer:login', ({tableId, userId}) => {
@@ -13,13 +14,14 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       .then(result => {
         // if there's an active table just OVERWRITE it right now.
         if (result.length > 0) {
-          console.log('OVERWRITE:', result);
           let table = result[0];
-          return dbClient.updateItem(T_ACTIVE, {
-            _id: table._id,
-            dealer: userId,
-            dealerSocket: socket.id
-          });
+          return dbClient.updateItem(T_ACTIVE,
+            { _id: dbClient.objectId(table._id) },
+            {
+              dealer: userId,
+              dealerSocket: socket.id
+            }
+          );
         }
         // set the dealer to the table
         else {
@@ -57,12 +59,12 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
         const doc = inserted.ops[0];
         dbClient.getDocById(P_ACTIVE, doc._id, {_id:false}).then(activePlayer => {
           let playerSocket = playersIO.sockets[socketId];
-          let tableRoom = `/${tableId}`;
-          playerSocket.join(tableRoom);
+          playerSocket.join(tableId);
           playerSocket.emit('ready:player:join', activePlayer);
-          playerSocket.to(tableRoom).emit('new:player', {socketId});
+          playerSocket.to(tableId).emit('new:player', {activePlayer});
         })
         .catch(console.error);
+
         dbClient.getCollection(P_ACTIVE, {tableId}).then(collection => {
           socket.emit('updated:players', collection);
         })
@@ -74,6 +76,7 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       });
   });
 
+  // Cancel a pending request
   socket.on('cancel:request', model => {
     dbClient.getAndRemoveItem(P_PENDING, model).then( pendingPlayer => {
       pendingPlayer = pendingPlayer.value;
@@ -84,6 +87,7 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
     .catch(console.error);
   });
 
+  // Dealer is starting a game
   socket.on('start:game', tableId => {
     dbClient.getCollection(GAMES_ACTIVE, {tableId})
     .then(result => {
@@ -92,17 +96,99 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
         throw new Error(`MORE_THAN_ONE_ERROR - ${tableId}: ${JSON.stringify(result)}`);
       }
       else {
-        return dbClient.insertItem(GAMES, {tableId, creation: Date.now()});
+        // create and return a historical document
+        return dbClient.insertItem(GAMES, {tableId, creation: Date.now(), cards:[], rounds: [], type: 'single-line'});
       }
     })
     .then(inserted => {
-      return dbClient.insertItem(GAMES_ACTIVE, inserted.ops[0]);
+      // add it to the active documents
+      let historicDoc = inserted.ops[0];
+      return dbClient.insertItem(GAMES_ACTIVE, historicDoc)
+              .then(() => historicDoc);
     })
     .then(inserted => {
-      let gameInfo = inserted.ops[0];
-      socket.emit('new:game', gameInfo);
-      playersIO.emit('new:game');
+      let gameInfo = inserted;
+      // create the first round data
+      dbClient.insertItem('active-rounds', {gameId:gameInfo._id, number:1, result:'', bets:[]})
+      .then(insertedRound => {
+        // let everyone know that the game has started
+        insertedRound = insertedRound.ops[0];
+        socket.emit('new:game', Object.assign(gameInfo, {round: insertedRound.number}));
+        playersIO.to(`/${tableId}`).emit('new:game');
+      })
+      .catch(console.error);
     })
     .catch(console.error);
   });
+
+  socket.on('enter:roll', ({gameId, rollData}) => {
+    gameId = dbClient.objectId(gameId);
+    let game;
+    let isWinner;
+    let roundData;
+    // get and retain the game data
+    dbClient.getCollection(GAMES_ACTIVE, {_id: gameId})
+    .then( games => {
+      if ( games.length < 1 ) throw new Error('Game not found.' + gameId);
+      game = games[0];
+      isWinner = rollValidator.isWinner(game, rollData);
+      // let the players know what the roll results are
+      let tableRoom = game.tableId.toString();
+      playersIO.to(tableRoom).emit('announce:roll', 'hello');
+      // return the active round
+      return dbClient.getAndRemoveItem('active-rounds', {gameId});
+    })
+    .then(result => {
+      // add the roll info to the round data
+      roundData = Object.assign(result.value, {result: rollData});
+
+      if (isWinner) {
+        return finishGame.call(this, game, roundData);
+      }
+      return startNextRound.call(this, game, roundData);
+    })
+    .then(games => {
+      game = games[0];
+      let bonusWinners = game.rounds[game.rounds.length - 1].bets.filter(b => b.result !== 'collected');
+      console.log('winners', winners);
+      // TODO: update player balances
+    })
+    .then(() => {
+      if (isWinner) {
+        playersIO.to(game.tableId).emit('game:over');
+        socket.emit('game:over');
+      }
+      else {
+        dbClient.insertItem('active-rounds', {gameId:game._id, number: roundData.number + 1, result:'', bets:[]})
+        .then(result => {
+          playersIO.to(game.tableId).emit('next:round');
+          socket.emit('next:round');
+        })
+      }
+    })
+    .catch(console.error);
+  });
+
+  function finishGame(game, roundData) {
+    return dbClient.getAndRemoveItem(GAMES_ACTIVE, {_id: game._id})
+    .then(gameDoc => {
+      let roll = roundData.result;
+      game = gameDoc.value;
+      let cards = game.cards.map(rollValidator.updateWinners(roll, 'card'));
+      roundData.bets = roundData.bets.map(rollValidator.updateWinners(roll, 'bonus'));
+      return dbClient.updateItem(GAMES, {_id: game._id}, {
+        $set: { cards: cards, finish: Date.now() },
+        $push: {rounds: roundData }
+      });
+    })
+    .then(() => dbClient.getCollection(GAMES, {_id: game._id}));
+  }
+
+  function startNextRound(game, roundData) {
+    let roll = roundData.result;
+    roundData.bets = roundData.bets.map(rollValidator.updateWinners(roll, 'bonus'));
+    return dbClient.updateItem(GAMES_ACTIVE, {_id: game._id}, {$push: {rounds: roundData}})
+      .then(() => dbClient.getCollection(GAMES_ACTIVE, {_id: game._id}));
+  }
+
 };
