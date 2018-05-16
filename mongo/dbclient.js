@@ -94,33 +94,23 @@ module.exports = (function() {
       });
     },
 
-    updateItem: function update(collectionName, data) {
-      const that = this;
+    updateItem: function update(collectionName, filter, data) {
+      const getDb = this.getDbAccess;
       return new Promise(function(resolve, reject) {
         if (! (collectionName && data))
           reject(new Error('collection name and/or update data missing'));
-        if (! data._id)
-          reject(new Error('No ID for update'));
-
-        that.getDbAccess().then(client => {
-          const
-            query = { _id: ObjectId(data._id)},
-            updateData = {};
-
-          Object.keys(data).reduce((acc, key) => {
-            if (key !== '_id')
-              acc[key] = data[key];
-              return acc;
-            }, updateData);
-
+        getDb().then(client => {
           const db = client.db(DATABASE);
-          const updateProm = db.collection(collectionName).update(query, updateData);
-          updateProm
+          db.collection(collectionName).updateOne(filter, data)
             .then(resolve)
             .catch(reject);
         })
         .catch(reject);
       });
+    },
+
+    objectId: function objectId(rawId) {
+      return ObjectId(rawId);
     }
   };
 
