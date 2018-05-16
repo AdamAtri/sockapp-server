@@ -20,7 +20,9 @@ module.exports = (function(){
       "no-console": env === 'production' ? 2 : 1,
     },
     "globals": {
-      "io": false
+      "io": false,
+      "it": false, // testing
+      "describe": false // testing
     }
   }
 })();
