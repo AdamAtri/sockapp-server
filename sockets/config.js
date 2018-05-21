@@ -9,3 +9,4 @@ module.exports.PENDING_REASONS = {
 };
 module.exports.GAMES_ACTIVE = 'active-games';
 module.exports.GAMES = 'historical-games';
+module.exports.RNDS_ACTIVE = 'active-rounds';
