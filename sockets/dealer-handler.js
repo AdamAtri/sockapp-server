@@ -113,14 +113,16 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       .then(insertedRound => {
         // let everyone know that the game has started
         insertedRound = insertedRound.ops[0];
-        socket.emit('new:game', Object.assign(gameInfo, {round: insertedRound.number}));
-        playersIO.to(`/${tableId}`).emit('new:game');
+        let gameData = Object.assign(gameInfo, {round: insertedRound.number});
+        socket.emit('new:game', gameData);
+        playersIO.to(tableId).emit('new:game', gameData);
       })
       .catch(console.error);
     })
     .catch(console.error);
   });
 
+  // Dealer is entering a roll for the round.
   socket.on('enter:roll', ({gameId, rollData}) => {
     gameId = dbClient.objectId(gameId);
     let game;
@@ -134,7 +136,7 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       isWinner = rollValidator.isWinner(game, rollData);
       // let the players know what the roll results are
       let tableRoom = game.tableId.toString();
-      playersIO.to(tableRoom).emit('announce:roll', 'hello');
+      playersIO.to(tableRoom).emit('notify', {rollData, isWinner});
       // return the active round
       return dbClient.getAndRemoveItem('active-rounds', {gameId});
     })
@@ -150,7 +152,7 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
     .then(games => {
       game = games[0];
       let bonusWinners = game.rounds[game.rounds.length - 1].bets.filter(b => b.result !== 'collected');
-      console.log('winners', winners);
+      console.log('winners', bonusWinners);
       // TODO: update player balances
     })
     .then(() => {
@@ -161,9 +163,10 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       else {
         dbClient.insertItem('active-rounds', {gameId:game._id, number: roundData.number + 1, result:'', bets:[]})
         .then(result => {
+          console.log(result);
           playersIO.to(game.tableId).emit('next:round');
           socket.emit('next:round');
-        })
+        });
       }
     })
     .catch(console.error);
