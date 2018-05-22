@@ -80,7 +80,8 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
       return dbClient.updateItem(P_ACTIVE, {_id: player._id}, {
         $set: {amt: newAmt}
       }).then(result => {
-        socket.emit('update:player', result.value);
+        // notify the player
+        socket.emit('update:user', result.value);
       });
     })
     .then(() => {
@@ -95,7 +96,6 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
     })
     .then( games => {
       // send the updated game details to the dealer.
-      console.log(games);
       dealersIO.to(games[0].tableId).emit('updated:game', games[0]);
     })
     .then(() => {
