@@ -4,7 +4,7 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
 
   const dbClient = require('../mongo/dbclient');
   const rollValidator = require('../game/roll-validator');
-  const {T_ACTIVE, P_PENDING, P_ACTIVE, GAMES, GAMES_ACTIVE} = require('./config');
+  const {T_ACTIVE, P_PENDING, P_ACTIVE, GAMES, GAMES_ACTIVE, RNDS_ACTIVE} = require('./config');
 
   socket.on('dealer:login', ({tableId, userId}) => {
 
@@ -33,7 +33,7 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
         }
       })
       .then(() => {
-        socket.join(`/${tableId}`);
+        socket.join(tableId);
         socket.emit('login:confirm', tableId);
       })
       .catch(err => {
@@ -109,7 +109,7 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
     .then(inserted => {
       let gameInfo = inserted;
       // create the first round data
-      dbClient.insertItem('active-rounds', {gameId:gameInfo._id, number:1, result:'', bets:[]})
+      dbClient.insertItem(RNDS_ACTIVE, makeRound({gameId:gameInfo._id}))
       .then(insertedRound => {
         // let everyone know that the game has started
         insertedRound = insertedRound.ops[0];
@@ -120,6 +120,24 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       .catch(console.error);
     })
     .catch(console.error);
+  });
+
+  // Dealer is closing bets for the round
+  socket.on('close:bets', ({gameId}) => {
+    console.log(gameId);
+    dbClient.getCollection(GAMES_ACTIVE, {_id: dbClient.objectId(gameId)})
+    .then(games => {
+      let game = games[0];
+      if (! game) throw new Error('CLOSE_BETS_ERR: game not found. ' + gameId);
+      // warn players that betting is about to be closed.
+      playersIO.to(game.tableId).emit('bets:closing');
+      setTimeout(() => {
+        // close bets and let players know.
+        dbClient.updateItem(RNDS_ACTIVE, {gameId}, {$set: {betting:0}});
+        playersIO.to(game.tableId).emit('bets:closed');
+        socket.emit('bets:closed');
+      }, 5000);
+    });
   });
 
   // Dealer is entering a roll for the round.
@@ -134,11 +152,8 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       if ( games.length < 1 ) throw new Error('Game not found.' + gameId);
       game = games[0];
       isWinner = rollValidator.isWinner(game, rollData);
-      // let the players know what the roll results are
-      let tableRoom = game.tableId.toString();
-      playersIO.to(tableRoom).emit('notify', {rollData, isWinner});
       // return the active round
-      return dbClient.getAndRemoveItem('active-rounds', {gameId});
+      return dbClient.getAndRemoveItem(RNDS_ACTIVE, {gameId});
     })
     .then(result => {
       // add the roll info to the round data
@@ -151,23 +166,29 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
     })
     .then(games => {
       game = games[0];
+      // let the players know what the roll results are
+      playersIO.to(game.tableId).emit('round:results', {rollData, isWinner});
+
       let bonusWinners = game.rounds[game.rounds.length - 1].bets.filter(b => b.result !== 'collected');
       console.log('winners', bonusWinners);
       // TODO: update player balances
+
     })
     .then(() => {
-      if (isWinner) {
-        playersIO.to(game.tableId).emit('game:over');
-        socket.emit('game:over');
-      }
-      else {
-        dbClient.insertItem('active-rounds', {gameId:game._id, number: roundData.number + 1, result:'', bets:[]})
-        .then(result => {
-          console.log(result);
-          playersIO.to(game.tableId).emit('next:round');
-          socket.emit('next:round');
-        });
-      }
+      setTimeout(() => {
+        if (isWinner) {
+          playersIO.to(game.tableId).emit('game:over');
+          socket.emit('game:over');
+        }
+        else {
+          dbClient.insertItem(RNDS_ACTIVE, makeRound({gameId:game._id, number: roundData.number + 1}))
+          .then(result => {
+            console.log(result);
+            playersIO.to(game.tableId).emit('next:round');
+            socket.emit('next:round');
+          });
+        }
+      }, 1000);
     })
     .catch(console.error);
   });
@@ -192,6 +213,17 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
     roundData.bets = roundData.bets.map(rollValidator.updateWinners(roll, 'bonus'));
     return dbClient.updateItem(GAMES_ACTIVE, {_id: game._id}, {$push: {rounds: roundData}})
       .then(() => dbClient.getCollection(GAMES_ACTIVE, {_id: game._id}));
+  }
+
+  function makeRound (data) {
+    let base = {
+      gameId: -1,
+      number: 1,
+      result:'',
+      bets:[],
+      betting:-1
+    };
+    return Object.assign(base, data);
   }
 
 };
