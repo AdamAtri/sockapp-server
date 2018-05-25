@@ -2,6 +2,8 @@
 
 module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
 
+  'use strict';
+
   const dbClient = require('../mongo/dbclient');
   const rollValidator = require('../game/roll-validator');
   const {T_ACTIVE, P_PENDING, P_ACTIVE, GAMES, GAMES_ACTIVE, RNDS_ACTIVE} = require('./config');
@@ -117,9 +119,12 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
         socket.emit('new:game', gameData);
         playersIO.to(tableId).emit('new:game', gameData);
       })
-      .catch(console.error);
+      .catch(err => { throw err; });
     })
-    .catch(console.error);
+    .catch(err => {
+      console.error(err);
+      socket.emit('fail', 'An error occurred while starting the game: ' + err.message);
+    });
   });
 
   // Dealer is closing bets for the round
@@ -131,12 +136,16 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       if (! game) throw new Error('CLOSE_BETS_ERR: game not found. ' + gameId);
       // warn players that betting is about to be closed.
       playersIO.to(game.tableId).emit('bets:closing');
-      setTimeout(() => {
+      setTimeout(() => { // 5sec timeout
         // close bets and let players know.
         dbClient.updateItem(RNDS_ACTIVE, {gameId}, {$set: {betting:0}});
         playersIO.to(game.tableId).emit('bets:closed');
         socket.emit('bets:closed');
       }, 5000);
+    })
+    .catch(err => {
+      console.error(err);
+      socket.emit('fail', 'An error occurred while closing the betting round: ' + err.message);
     });
   });
 
@@ -160,14 +169,15 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       roundData = Object.assign(result.value, {result: rollData});
 
       if (isWinner) {
-        return finishGame.call(this, game, roundData);
+        return finishGame.call(null, game, roundData);
       }
-      return startNextRound.call(this, game, roundData);
+      return startNextRound.call(null, game, roundData);
     })
     .then(games => {
       game = games[0];
       // let the players know what the roll results are
-      playersIO.to(game.tableId).emit('round:results', {rollData, isWinner});
+      let {result, number} = roundData;
+      playersIO.to(game.tableId).emit('round:results', {result, number, isWinner});
 
       let bonusWinners = game.rounds[game.rounds.length - 1].bets.filter(b => b.result !== 'collected');
       console.log('winners', bonusWinners);
@@ -198,11 +208,11 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
     .then(gameDoc => {
       let roll = roundData.result;
       game = gameDoc.value;
-      let cards = game.cards.map(rollValidator.updateWinners(roll, 'card'));
+      game.cards = game.cards.map(rollValidator.updateWinners(roll, 'card'));
       roundData.bets = roundData.bets.map(rollValidator.updateWinners(roll, 'bonus'));
+      game.rounds.push(roundData);
       return dbClient.updateItem(GAMES, {_id: game._id}, {
-        $set: { cards: cards, finish: Date.now() },
-        $push: {rounds: roundData }
+        $set: { game, finish: Date.now() }
       });
     })
     .then(() => dbClient.getCollection(GAMES, {_id: game._id}));
@@ -216,14 +226,14 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
   }
 
   function makeRound (data) {
-    let base = {
+    let defaults = {
       gameId: -1,
       number: 1,
       result:'',
       bets:[],
       betting:-1
     };
-    return Object.assign(base, data);
+    return Object.assign(defaults, data);
   }
 
 };
