@@ -185,6 +185,7 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
           if (nxt.result && nxt.result !== 'collected') {
             acc[nxt.userId] = nxt.result;
           }
+          return acc;
         }, winners);
       }
 
@@ -192,12 +193,26 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
         if (nxt.result && nxt.result !== 'collected') {
           acc[nxt.userId] = (acc[nxt.userId] || 0) + nxt.result;
         }
+        return acc;
       }, winners);
 
-      console.log(game);
-      console.log('winners', winners);
-
-
+      let promises = [];
+      Object.keys(winners).reduce((acc, userId) => {
+        acc.push(dbClient.updateItem(P_ACTIVE, {userId}, {$inc: { amt: winners[userId] }})
+          .then(() => {
+            return dbClient.getCollection(P_ACTIVE, {userId});
+          })
+          .then( players_a => {
+            let winner = players_a[0];
+            playersIO.to(winner.socketId).emit(
+              'update:winner',
+              Object.assign({}, winner, {winAmt: winners[userId]})
+            );
+          })
+        );
+        return acc;
+      }, promises);
+      return Promise.all(promises);
     })
     .then(() => {
       setTimeout(() => {
