@@ -57,6 +57,7 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
   });
 
   socket.on('buy:card', buyCard.bind(null, socket));
+  socket.on('buy:bonus', buyBonus.bind(null, socket));
 
   function buyCard(socket, bet) {
     console.log('buyCard', bet);
@@ -79,9 +80,12 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
       let newAmt = player.amt - (bet.betAmt + bet.commission);
       return dbClient.updateItem(P_ACTIVE, {_id: player._id}, {
         $set: {amt: newAmt}
-      }).then(result => {
+      }).then(() => {
         // notify the player
-        socket.emit('update:user', result.value);
+        dbClient.getCollection(P_ACTIVE, {_id: player._id})
+        .then( players2 => {
+          socket.emit('update:user', players2[0]);
+        });
       });
     })
     .then(() => {
@@ -90,7 +94,7 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
         $push:{cards: Object.assign(bet, {socket: socket.id, result: null})}
       });
     })
-    .then( () => {
+    .then(() => {
       // find and return the updated game
       return dbClient.getCollection(GAMES_ACTIVE, {tableId: bet.tableId});
     })
@@ -100,11 +104,15 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
     })
     .then(() => {
       // notify the player that the transaction is complete.
-      socket.emit('notify', `Purchased ${bet.card} card for ${bet.betAmt}`);
+      socket.emit('card:bought', {betAmt:bet.betAmt, card:bet.card, commission: bet.commission});
     })
     .catch(err => {
       console.error(err);
       socket.emit('fail', 'An error has occurred. ' + err.message);
     });
+  }
+
+  function buyBonus(socket, bet) {
+    console.log('buy bonus', bet);
   }
 };
