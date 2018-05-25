@@ -179,9 +179,24 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       let {result, number} = roundData;
       playersIO.to(game.tableId).emit('round:results', {result, number, isWinner});
 
-      let bonusWinners = game.rounds[game.rounds.length - 1].bets.filter(b => b.result !== 'collected');
-      console.log('winners', bonusWinners);
-      // TODO: update player balances
+      let winners = {};
+      if (isWinner) {
+        game.cards.reduce((acc, nxt) => {
+          if (nxt.result && nxt.result !== 'collected') {
+            acc[nxt.userId] = nxt.result;
+          }
+        }, winners);
+      }
+
+      game.rounds[number-1].bets.reduce((acc, nxt) => {
+        if (nxt.result && nxt.result !== 'collected') {
+          acc[nxt.userId] = (acc[nxt.userId] || 0) + nxt.result;
+        }
+      }, winners);
+
+      console.log(game);
+      console.log('winners', winners);
+
 
     })
     .then(() => {
@@ -193,9 +208,8 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
         else {
           dbClient.insertItem(RNDS_ACTIVE, makeRound({gameId:game._id, number: roundData.number + 1}))
           .then(result => {
-            console.log(result);
-            playersIO.to(game.tableId).emit('next:round');
-            socket.emit('next:round');
+            playersIO.to(game.tableId).emit('next:round', result.ops[0]);
+            socket.emit('next:round', result.ops[0]);
           });
         }
       }, 1000);
@@ -212,7 +226,7 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       roundData.bets = roundData.bets.map(rollValidator.updateWinners(roll, 'bonus'));
       game.rounds.push(roundData);
       return dbClient.updateItem(GAMES, {_id: game._id}, {
-        $set: { game, finish: Date.now() }
+        $set: { cards: game.cards, rounds: game.rounds, finish: Date.now() }
       });
     })
     .then(() => dbClient.getCollection(GAMES, {_id: game._id}));
