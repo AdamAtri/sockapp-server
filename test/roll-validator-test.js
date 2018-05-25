@@ -46,7 +46,8 @@ describe('RollValidator', function() {
 
   describe('#updateWinners', function() {
     let cardMap;
-    let mockroll = ['b', 'b']; // shooter winner
+    let shooter_roll = ['b', 'b']; // shooter winner
+    let bingo_roll = ['n', 'n']; // bingo winner
     let mockgame = {
       type: 'single-line',
       cards: [
@@ -74,16 +75,23 @@ describe('RollValidator', function() {
       ]
     };
     it ('should return a function when provided rollData and a validation type (card / bonus)', function() {
-      cardMap = rv.updateWinners(mockroll, 'card'); // shooter wins
+      cardMap = rv.updateWinners(shooter_roll, 'card'); // shooter wins
       assert.isFunction(cardMap);
     });
     it ('if "shooter" wins, cardMap should update shooter cards with winnings information.', function() {
       let mappedCards = mockgame.cards.map(cardMap);
-      console.log(mappedCards);
       assert.notEqual(mappedCards, mockgame.cards);
       assert.equal(mappedCards[0].result, 205);
       assert.equal(mappedCards[1].result, 'collected');
       assert.equal(mappedCards[2].result, 'collected');
+    });
+    it ('should update bingo cards with winnings information if "bingo" wins.', function() {
+      cardMap = rv.updateWinners(bingo_roll, 'card'); // bingo wins
+      let mappedCards = mockgame.cards.map(cardMap);
+      assert.notEqual(mappedCards, mockgame.cards);
+      assert.equal(mappedCards[0].result, 'collected');
+      assert.equal(mappedCards[1].result, 205);
+      assert.equal(mappedCards[2].result, 102.5);
     });
   });
 });

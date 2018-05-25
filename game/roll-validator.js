@@ -34,7 +34,7 @@ module.exports = (function() {
       let card = this.validateCard(rollData);
       return function(bet) {
         let isWinner = bet.card === card;
-        bet.result = isWinner ? (bet.amt * multiplier) : 'collected';
+        bet.result = isWinner ? (bet.betAmt * multiplier) : 'collected';
         if (type === 'card' && isWinner) bet.result += bet.commission || 0;
         return bet;
       };
