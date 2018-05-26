@@ -16,13 +16,12 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       .then(result => {
         // if there's an active table just OVERWRITE it right now.
         if (result.length > 0) {
-          let table = result[0];
           return dbClient.updateItem(T_ACTIVE,
-            { _id: dbClient.objectId(table._id) },
-            {
+            { tableName: tableId },
+            {$set: {
               dealer: userId,
               dealerSocket: socket.id
-            }
+            }}
           );
         }
         // set the dealer to the table
