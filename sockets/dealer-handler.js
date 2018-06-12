@@ -128,7 +128,6 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
 
   // Dealer is closing bets for the round
   socket.on('close:bets', ({gameId}) => {
-    console.log(gameId);
     dbClient.getCollection(GAMES_ACTIVE, {_id: dbClient.objectId(gameId)})
     .then(games => {
       let game = games[0];
@@ -173,13 +172,14 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       return startNextRound.call(null, game, roundData);
     })
     .then(games => {
+      // let the players know what the roll results are and update the winners
       game = games[0];
-      // let the players know what the roll results are
       let {result, number} = roundData;
       playersIO.to(game.tableId).emit('round:results', {result, number, isWinner});
 
       let winners = {};
       if (isWinner) {
+        // if this is a winning round, update the winning card holders
         game.cards.reduce((acc, nxt) => {
           if (nxt.result && nxt.result !== 'collected') {
             acc[nxt.userId] = nxt.result;
@@ -187,14 +187,15 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
           return acc;
         }, winners);
       }
-
+      // there will only be round-winners if the game.type != "single-line"
+      //  or this is a winning round.
       game.rounds[number-1].bets.reduce((acc, nxt) => {
         if (nxt.result && nxt.result !== 'collected') {
           acc[nxt.userId] = (acc[nxt.userId] || 0) + nxt.result;
         }
         return acc;
       }, winners);
-
+      // make sure everyone gets notified before going forward.
       let promises = [];
       Object.keys(winners).reduce((acc, userId) => {
         acc.push(dbClient.updateItem(P_ACTIVE, {userId}, {$inc: { amt: winners[userId] }})
