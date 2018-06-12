@@ -3,10 +3,9 @@
 module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket) {
 
   const dbClient = require('../mongo/dbclient.js');
-  const {P_PENDING, P_ACTIVE, T_ACTIVE, PENDING_REASONS, GAMES_ACTIVE} = require('./config');
+  const {P_PENDING, P_ACTIVE, T_ACTIVE, PENDING_REASONS, GAMES_ACTIVE, RNDS_ACTIVE} = require('./config');
 
   socket.on('join:table', ({tableId, userId}) => {
-    // xxx console.log('join:table');
     let reason = PENDING_REASONS.BUYIN;
     let socketId = socket.id;
     let pendingPlayer;
@@ -15,7 +14,6 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
     Promise.resolve()
       // stop a player from trying to buy into more than one table
       .then( () => {
-        // xxx console.log('verify not on any other tables');
         if (Object.keys(socket.rooms).length > 1) {
           socket.emit('fail', 'Please cashout from your current table if you like to join a new one.');
           throw new Error('JOIN_TABLE_ERR: Multitable join. ' + socket.id);
@@ -24,7 +22,6 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
       })
       // stop a player from trying to buy into an inactive table
       .then( result => {
-        // xxx console.log('verify table is active');
         if (result.length < 1) {
           socket.emit('fail', 'You cannot join a table without a dealer');
           throw new Error('JOIN_TABLE_ERR: inactive table. ' + socket.id);
@@ -35,7 +32,6 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
       // alert the dealer of the requested table that there is a pending player buyin,
       //  and add the user to the pending-players table.
       .then( tableData => {
-        // xxx console.log('active table', tableData);
         dealerSocket = tableData.dealerSocket;
         pendingPlayer = { userId, socketId, tableId, reason };
         return dbClient.insertItem(P_PENDING, pendingPlayer);
@@ -60,7 +56,6 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
   socket.on('buy:bonus', buyBonus.bind(null, socket));
 
   function buyCard(socket, bet) {
-    console.log('buyCard', bet);
     // look up the player account
     dbClient.getCollection(P_ACTIVE, {userId: bet.userId})
     .then(players => {
@@ -104,7 +99,7 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
     })
     .then(() => {
       // notify the player that the transaction is complete.
-      socket.emit('card:bought', {betAmt:bet.betAmt, card:bet.card, commission: bet.commission});
+      socket.emit('card:bought', {betAmt:bet.betAmt, card:bet.card, commission: bet.commission, approved:true});
     })
     .catch(err => {
       console.error(err);
@@ -113,6 +108,54 @@ module.exports = function applyPlayerHandlers(app, playersIO, dealersIO, socket)
   }
 
   function buyBonus(socket, bet) {
-    console.log('buy bonus', bet);
+    // look up the player account
+    dbClient.getCollection(P_ACTIVE, {userId: bet.userId})
+    .then(players => {
+      let player = players[0];
+      // verify that we can find the player
+      if (! player) {
+        socket.emit('fail', 'We could not find your account. That seems strange.');
+        throw new Error(`BUYBONUS_ERR: player not found. ${bet.userId}`);
+      }
+      // verify that the user can make a bet that large
+      if (bet.betAmt > player.amt) {
+        socket.emit('fail', 'You can\'t bet more than you\'ve got.');
+        throw new Error(`BUYBONUS_ERR: funds - ${bet.userId} ${bet.socketId}`);
+      }
+      // update the player's account to reflect the deduction of the
+      //  bet amount and commission
+      let newAmt = player.amt - bet.betAmt;
+      return dbClient.updateItem(P_ACTIVE, {_id: player._id}, {
+        $set: {amt: newAmt}
+      }).then(() => {
+        // notify the player
+        dbClient.getCollection(P_ACTIVE, {_id: player._id})
+        .then( players2 => {
+          socket.emit('update:user', players2[0]);
+        });
+      });
+    })
+    .then(() => {
+      // add the bet to the active round
+      return dbClient.updateItem(RNDS_ACTIVE, {gameId: dbClient.objectId(bet.gameId)}, {
+        $push:{bets: Object.assign(bet, {approved: true, result: null})}
+      });
+    })
+    .then(() => {
+      // find and return the updated round info
+      return dbClient.getCollection(RNDS_ACTIVE, {gameId: dbClient.objectId(bet.gameId)})
+      .then( rounds => {
+        // send the updated round details to the dealer.
+        dealersIO.to(bet.tableId).emit('updated:round', rounds[0]);
+      });
+    })
+    .then(() => {
+      // notify the player that the transaction is complete.
+      socket.emit('bonus:bought', Object.assign(bet, {approved: true}));
+    })
+    .catch(err => {
+      socket.emit('fail', 'An error occurred while purchasing your bonus.');
+      console.error(err);
+    });
   }
 };
