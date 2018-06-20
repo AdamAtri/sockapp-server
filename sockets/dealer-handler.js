@@ -175,14 +175,15 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       // let the players know what the roll results are and update the winners
       game = games[0];
       let {result, number} = roundData;
-      playersIO.to(game.tableId).emit('round:results', {result, number, isWinner});
+
 
       let winners = {};
       if (isWinner) {
         // if this is a winning round, update the winning card holders
         game.cards.reduce((acc, nxt) => {
           if (nxt.result && nxt.result !== 'collected') {
-            acc[nxt.userId] = nxt.result;
+            let result = {winCardAmt: nxt.result, total: nxt.result};
+            acc[nxt.userId] = result;
           }
           return acc;
         }, winners);
@@ -191,28 +192,37 @@ module.exports = function dealerHandlers(app, playersIO, dealersIO, socket) {
       //  or this is a winning round.
       game.rounds[number-1].bets.reduce((acc, nxt) => {
         if (nxt.result && nxt.result !== 'collected') {
-          acc[nxt.userId] = (acc[nxt.userId] || 0) + nxt.result;
+          let result = acc[nxt.userId] || {winCardAmt: 0, total: 0};
+          result['winBonusAmt'] = nxt.result;
+          result.total += nxt.result;
+          acc[nxt.userId] = result;
         }
         return acc;
       }, winners);
       // make sure everyone gets notified before going forward.
       let promises = [];
       Object.keys(winners).reduce((acc, userId) => {
-        acc.push(dbClient.updateItem(P_ACTIVE, {userId}, {$inc: { amt: winners[userId] }})
+        acc.push(dbClient.updateItem(P_ACTIVE, {userId}, {$inc: { amt: winners[userId].total }})
           .then(() => {
             return dbClient.getCollection(P_ACTIVE, {userId});
           })
           .then( players_a => {
             let winner = players_a[0];
-            playersIO.to(winner.socketId).emit(
-              'update:winner',
-              Object.assign({}, winner, {winAmt: winners[userId]})
-            );
+            playersIO.to(winner.socketId).emit('update:winner',
+              Object.assign({}, winner, winners[userId]));
           })
         );
         return acc;
       }, promises);
-      return Promise.all(promises);
+      return Promise.all(promises)
+            .then(() => {
+              playersIO.to(game.tableId).emit('round:results', {
+                result,
+                number, 
+                winner: isWinner ? rollValidator.validateCard(rollData) : null
+              });
+              return true;
+            });
     })
     .then(() => {
       setTimeout(() => {
