@@ -10,7 +10,8 @@
     "lint": "eslint --ignore-pattern '/node_modules/' --ignore-pattern '/public/' .",
     "predemon": "DEBUG=*",
     "demon": "NODE_ENV=development nodemon server.js --exec \"yarn lint && node\" ",
-    "test": "mocha"
+    "test": "mocha",
+    "build": "~/Code/shooter-server/build.sh"
   },
   "dependencies": {
     "body-parser": "^1.18.2",
