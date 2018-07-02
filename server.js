@@ -31,6 +31,7 @@ app.use('*', (req, res, next) => {
 
 
 app.use('/', express.static(join(__dirname, 'public')));
+app.get('/dealer', (req, res) => {res.sendFile(join(__dirname, 'public', 'dealer.html'));});
 app.use('/api', require('./api/index.js'));
 
 const

@@ -20,6 +20,7 @@ module.exports = function sbmiddleware(http) {
     next();
   });
 
+  sbApp.get('/dealer', (req, res) => { res.sendFile(join(__dirname, 'public', 'dealer.html')); });
 
   sbApp.use(express.static(join(__dirname, 'public')));
   sbApp.use('/api', require('./api/index.js'));
